@@ -950,6 +950,368 @@ All aggregation stages can use maximum 100MB of RAM. Server will return error if
 db.persons.aggregate([], {allowDiskUse: true})
 ```
 
+## $lookup two collections
+Leverages the left outer join method to merge information from one document to another. You could add an extra field to the existing document to demystify information
+
+[![Quantity diagrams: INNER JOIN vs. OUTER JOIN](https://www.ionos.com/digitalguide/fileadmin/DigitalGuide/Screenshots_2018/Outer-Join.jpg "Quantity diagrams: INNER JOIN vs. OUTER JOIN")](https://www.ionos.com/digitalguide/fileadmin/DigitalGuide/Screenshots_2018/Outer-Join.jpg)
+
+Two collections:
+```
+db.orders.insertMany( [
+   { "_id" : 1, "item" : "almonds", "price" : 12, "quantity" : 2 },
+   { "_id" : 2, "item" : "pecans", "price" : 20, "quantity" : 1 },
+   { "_id" : 3  }
+] )
+
+db.inventory.insertMany( [
+   { "_id" : 1, "sku" : "almonds", "description": "product 1", "instock" : 120 },
+   { "_id" : 2, "sku" : "bread", "description": "product 2", "instock" : 80 },
+   { "_id" : 3, "sku" : "cashews", "description": "product 3", "instock" : 60 },
+   { "_id" : 4, "sku" : "pecans", "description": "product 4", "instock" : 70 },
+   { "_id" : 5, "sku": null, "description": "Incomplete" },
+   { "_id" : 6 }
+] )
+```
+
+Example 1
+```
+db.orders.aggregate( [
+   {
+     $lookup:
+       {
+         from: "inventory",
+         localField: "item",
+         foreignField: "sku",
+         as: "inventory_docs"
+       }
+  }
+] )
+```
+
+```
+{
+   "_id" : 1,
+   "item" : "almonds",
+   "price" : 12,
+   "quantity" : 2,
+   "inventory_docs" : [
+      { "_id" : 1, "sku" : "almonds", "description" : "product 1", "instock" : 120 }
+   ]
+}
+{
+   "_id" : 2,
+   "item" : "pecans",
+   "price" : 20,
+   "quantity" : 1,
+   "inventory_docs" : [
+      { "_id" : 4, "sku" : "pecans", "description" : "product 4", "instock" : 70 }
+   ]
+}
+{
+   "_id" : 3,
+   "inventory_docs" : [
+      { "_id" : 5, "sku" : null, "description" : "Incomplete" },
+      { "_id" : 6 }
+   ]
+}
+```
+
+
+## $lookup -> $mergeObjects
+```
+db.orders.aggregate( [
+   {$lookup:
+       {
+         from: "inventory",
+         localField: "item",
+         foreignField: "sku",
+         as: "inventory_docs"
+       }
+  },
+  {
+      $replaceRoot: {
+          newRoot: {
+              $mergeObjects: [ { $arrayElemAt: [ "$inventory_docs", 0 ] }, "$$ROOT" ] } 
+      }
+   },
+   {$project: {inventory_docs: 0}}
+] )
+```
+
+```
+
+/* 1 */
+{
+    "_id" : 1.0,
+    "sku" : "almonds",
+    "description" : "product 1",
+    "instock" : 120.0,
+    "item" : "almonds",
+    "price" : 12.0,
+    "quantity" : 2.0
+}
+
+/* 2 */
+{
+    "_id" : 2.0,
+    "sku" : "pecans",
+    "description" : "product 4",
+    "instock" : 70.0,
+    "item" : "pecans",
+    "price" : 20.0,
+    "quantity" : 1.0
+}
+
+/* 3 */
+{
+    "_id" : 3.0,
+    "sku" : null,
+    "description" : "Incomplete"
+}
+```
+
+
+## $lookup one collection
+```
+db.collection_1.aggregate( [
+    {$lookup:
+       {
+         from: "collection_1",
+         localField: "_id",
+         foreignField: "parent_id",
+         as: "children"
+       }
+    },
+    {$project: {
+        _id: 1,
+        parent_id: 1,
+        children: "$children._id"
+        }
+    }
+  
+])
+```
+Result the same as $graphLookup with maxDepth=0
+```
+/* 1 */
+{
+    "_id" : 1.0,
+    "parent_id" : null,
+    "children" : [ 
+        2.0, 
+        3.0
+    ]
+}
+
+/* 2 */
+{
+    "_id" : 2.0,
+    "parent_id" : 1.0,
+    "children" : []
+}
+
+/* 3 */
+{
+    "_id" : 3.0,
+    "parent_id" : 1.0,
+    "children" : [ 
+        4.0, 
+        5.0
+    ]
+}
+
+/* 4 */
+{
+    "_id" : 4.0,
+    "parent_id" : 3.0,
+    "children" : []
+}
+
+/* 5 */
+{
+    "_id" : 5.0,
+    "parent_id" : 3.0,
+    "children" : [ 
+        6.0
+    ]
+}
+
+/* 6 */
+{
+    "_id" : 6.0,
+    "parent_id" : 5.0,
+    "children" : []
+}
+```
+
+
+## $graphLookup
+
+Prepare collection
+```
+db.collection_1.insertMany([
+	{ '_id': 1, 'parent_id': null },
+	{ '_id': 2, 'parent_id': 1 },
+	{ '_id': 3, 'parent_id': 1 },
+	{ '_id': 4, 'parent_id': 3 },
+	{ '_id': 5, 'parent_id': 3 },
+	{ '_id': 6, 'parent_id': 5 }
+])
+```
+
+Example
+```
+db.collection_1.aggregate([
+    {$graphLookup: {
+		from: 'collection_1',
+		startWith: "$_id",
+		connectFromField: '_id',
+		connectToField: 'parent_id',
+		as: 'children'
+		}
+    },
+    {$project: {
+        _id: 1,
+        parent_id: 1,
+        children: "$children._id"
+        }
+    }
+])
+```
+
+```
+/* 1 */
+{
+    "_id" : 1.0,
+    "parent_id" : null,
+    "children" : [ 
+        3.0, 
+        4.0, 
+        6.0, 
+        2.0, 
+        5.0
+    ]
+}
+
+/* 2 */
+{
+    "_id" : 2.0,
+    "parent_id" : 1.0,
+    "children" : []
+}
+
+/* 3 */
+{
+    "_id" : 3.0,
+    "parent_id" : 1.0,
+    "children" : [ 
+        4.0, 
+        6.0, 
+        5.0
+    ]
+}
+
+/* 4 */
+{
+    "_id" : 4.0,
+    "parent_id" : 3.0,
+    "children" : []
+}
+
+/* 5 */
+{
+    "_id" : 5.0,
+    "parent_id" : 3.0,
+    "children" : [ 
+        6.0
+    ]
+}
+
+/* 6 */
+{
+    "_id" : 6.0,
+    "parent_id" : 5.0,
+    "children" : []
+}
+
+```
+
+
+## $graphLookup with maxDepth
+```
+db.collection_1.aggregate([
+    {$graphLookup: {
+        from: 'collection_1',
+        startWith: "$_id",
+        connectFromField: '_id',
+        connectToField: 'parent_id',
+        maxDepth: 0,
+        as: 'children'
+        }
+    },
+    {$project: {
+        _id: 1,
+        parent_id: 1,
+        children: "$children._id"
+        }
+    }
+])
+```
+
+```
+/* 1 */
+{
+    "_id" : 1.0,
+    "parent_id" : null,
+    "children" : [ 
+        3.0, 
+        2.0
+    ]
+}
+
+/* 2 */
+{
+    "_id" : 2.0,
+    "parent_id" : 1.0,
+    "children" : []
+}
+
+/* 3 */
+{
+    "_id" : 3.0,
+    "parent_id" : 1.0,
+    "children" : [ 
+        5.0, 
+        4.0
+    ]
+}
+
+/* 4 */
+{
+    "_id" : 4.0,
+    "parent_id" : 3.0,
+    "children" : []
+}
+
+/* 5 */
+{
+    "_id" : 5.0,
+    "parent_id" : 3.0,
+    "children" : [ 
+        6.0
+    ]
+}
+
+/* 6 */
+{
+    "_id" : 6.0,
+    "parent_id" : 5.0,
+    "children" : []
+}
+```
+
+
+
 
 ## some helpful links
 - MongoDB Aggregation Framework: https://www.youtube.com/watch?v=A3jvoE0jGdE&list=PLWkguCWKqN9OwcbdYm4nUIXnA2IoXX0LI
