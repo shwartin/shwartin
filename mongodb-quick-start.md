@@ -16,12 +16,23 @@ brew services stop mongodb-community@5.0
 
 
 ## shells
+- **Mongodb compass**
 - Mongodb plugin for vscode. Create new playground in vscode to run.
 - Robo 3t
 
 **howto increase font size in Robo 3t?**
 
 In file `/Users/<user>/.3T/robo-3t/1.4.4/robo3t.json` change `"textFontPointSize": -1` -> `"textFontPointSize": 15`
+
+
+## structure and syntax
+Field path: `"$filedName"`
+System variable: `"$$UPPERCASE"`
+User variable: `"$$foo"`
+
+- Piplenes are always an array of one or more stages
+- Stages are composed of one or more aggregation operators or expressions
+- Expression may take a single argument or an array of arguments. 
 
 
 ## aggregation operators
@@ -60,6 +71,14 @@ Sample documents here: https://github.com/bstashchuk/MongoDB-Aggregation-Tutoria
 
 
 ## $match
+![[Screenshot 2022-03-29 at 15.19.28 1.png]]
+
+- A $match stage may contain a $text query operator, but it must be the first stage in the pipeline.
+- $match come early in an aggregation pipeline
+- you cannot use $where with match
+- $match uses the same query syntax as find
+
+
 ```
 db.persons
     .aggregate([
@@ -476,6 +495,9 @@ try it out
 
 
 ## $project
+- once we specify one field to retain, we must specify all fields we want to retain, `_id` feild is exception
+- $project can be used as manyt times as required
+- can be used to derive entirely new fileds
 
 ```
 db.persons.aggregate([
@@ -1311,9 +1333,144 @@ db.collection_1.aggregate([
 ```
 
 
+## $geoNear
+- collection have one and only one 2sphere index
+- if using 2dsphere, the distance return in meters
+- $geoNear must be the first stage
+
+
+## MongoDB University, M121: The MongoDB Aggregation Framework
+
+
+### Lab - $match
+-   imdb.rating is at least 7
+-   genres does not contain "Crime" or "Horror"
+-   rated is either "PG" or "G"
+-   languages contains "English" and "Japanese"
+
+```
+{ $match:
+	{
+		"imdb.rating": { $gte: 7 },
+		genres: {$nin: ["Crime", "Horror"]},
+		$or: [{rated: "PG"}, {rated: "G"}],
+		$and: [{languages: "English"}, {languages: "Japanese"}]
+	}
+
+}
+```
+
+
+### Lab - Changing Document Shape with $project
+Using the same $match stage from the previous lab, add a $project stage to only display the title and film rating (title and rated fields)
+
+```
+var pipeline = [ 
+	{$match:
+		{
+			"imdb.rating": { $gte: 7 },
+			genres: {$nin: ["Crime", "Horror"]},
+			$or: [{rated: "PG"}, {rated: "G"}],
+			$and: [{languages: "English"}, {languages: "Japanese"}]
+		}
+
+	},
+	{$project:
+		{
+			_id: 0,
+			title: 1,
+			rated: 1
+		}	
+	}
+]
+```
+
+
+### Lab - Computing Fields
+Using the Aggregation Framework, find a count of the number of movies that have a title composed of one word. To clarify, "Cinderella" and "3-25" should count, where as "Cast Away" would not.
+
+```
+db.movies.aggregate([ 
+	{$project:
+		{
+			title: 1,
+			words: {$size: {$split: ["$title", " "]}}
+		}			
+	},
+	{$match:
+		{
+			words: {$eq: 1}
+		}
+	},
+	{$count: "oneWordTitles"}
+])
+```
+
+
+### Optional Lab - Expressions with $project
+Let's find how many movies in our **movies** collection are a "labor of love", where the same person appears in cast, directors, and writers
+
+```
+[{$match: {
+ writers: {
+  $elemMatch: {
+   $exists: true
+  }
+ },
+ cast: {
+  $elemMatch: {
+   $exists: true
+  }
+ },
+ directors: {
+  $elemMatch: {
+   $exists: true
+  }
+ }
+}}, {$project: {
+ writers: {
+  $map: {
+   input: '$writers',
+   as: 'writer',
+   'in': {
+    $arrayElemAt: [
+     {
+      $split: [
+       '$$writer',
+       ' ('
+      ]
+     },
+     0
+    ]
+   }
+  }
+ },
+ cast: 1,
+ directors: 1
+}}, {$project: {
+ inAll: {
+  $gt: [
+   {
+    $size: {
+     $setIntersection: [
+      '$writers',
+      '$cast',
+      '$directors'
+     ]
+    }
+   },
+   0
+  ]
+ }
+}}, {$match: {
+ inAll: true
+}}, {$count: 'all'}]
+```
 
 
 ## some helpful links
+- MongoDB University, M121: The MongoDB Aggregation Framework https://university.mongodb.com/mercury/M121/2022_March_22/overview
+- Aggregation Pipeline Quick Reference https://www.mongodb.com/docs/manual/meta/aggregation-quick-reference/#string-expressions
 - MongoDB Aggregation Framework: https://www.youtube.com/watch?v=A3jvoE0jGdE&list=PLWkguCWKqN9OwcbdYm4nUIXnA2IoXX0LI
 - Building a CRUD App with FastAPI and MongoDB https://testdriven.io/blog/fastapi-mongo/
 - Trees structure with parent: https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-parent-references/
