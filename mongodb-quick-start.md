@@ -376,8 +376,8 @@ db.persons.aggregate([
 
 
 ## $sort
--1 ascending
-1 descending
+1 ascending
+-1 descending
 
 ```
 db.persons.aggregate([
@@ -1339,6 +1339,14 @@ db.collection_1.aggregate([
 - $geoNear must be the first stage
 
 
+## $sample
+`{$sample: {size: < N, how many documents}}`
+
+- N <= 5% if documents in collection AND
+- source collection >= 100 documents AND
+- $sample is the first stage
+
+
 ## MongoDB University, M121: The MongoDB Aggregation Framework
 
 
@@ -1465,6 +1473,110 @@ Let's find how many movies in our **movies** collection are a "labor of love", w
 }}, {$match: {
  inAll: true
 }}, {$count: 'all'}]
+```
+
+
+### Lab: Using Cursor-like Stages
+For movies released in the **USA** with a tomatoes.viewer.rating greater than or equal to 3, calculate a new field called num_favs that represets how many **favorites** appear in the cast field of the movie.
+
+Sort your results by num_favs, tomatoes.viewer.rating, and title, all in descending order.
+
+What is the title of the **25th** film in the aggregation result?
+```
+[{$match: {
+ countries: 'USA',
+ 'tomatoes.viewer.rating': {
+  $gte: 3
+ }
+}}, {$addFields: {
+ favorites: [
+  'Sandra Bullock',
+  'Tom Hanks',
+  'Julia Roberts',
+  'Kevin Spacey',
+  'George Clooney'
+ ]
+}}, {$addFields: {
+ favs: {
+  $setIntersection: [
+   '$cast',
+   '$favorites'
+  ]
+ }
+}}, {$addFields: {
+ num_favs: {
+  $cond: {
+   'if': {
+    $isArray: '$favs'
+   },
+   then: {
+    $size: '$favs'
+   },
+   'else': null
+  }
+ }
+}}, {$sort: {
+ num_favs: -1,
+ 'tomatoes.viewer.rating': -1,
+ title: -1
+}}, {$skip: 24}, {$limit: 1}]
+```
+
+
+### Lab - Bringing it all together
+Calculate an average rating for each movie in our collection where English is an available language, the minimum imdb.rating is at least 1, the minimum imdb.votes is at least 1, and it was released in **1990** or after. You'll be required to [rescale (or _normalize_)](https://en.wikipedia.org/wiki/Feature_scaling) imdb.votes. The formula to rescale imdb.votes and calculate normalized_rating is included as a handout.
+
+What film has the lowest normalized_rating?
+```
+[{$match: {
+ languages: 'English',
+ 'imdb.rating': {
+  $gte: 1
+ },
+ 'imdb.votes': {
+  $gte: 1
+ },
+ year: {
+  $gte: 1990
+ }
+}}, {$addFields: {
+ scaled_votes: {
+  $add: [
+   1,
+   {
+    $multiply: [
+     9,
+     {
+      $divide: [
+       {
+        $subtract: [
+         '$imdb.votes',
+         5
+        ]
+       },
+       {
+        $subtract: [
+         1521105,
+         5
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}}, {$project: {
+ title: 1,
+ normalized_rating: {
+  $avg: [
+   '$imdb.rating',
+   '$scaled_votes'
+  ]
+ }
+}}, {$sort: {
+ normalized_rating: 1
+}}, {$limit: 1}]
 ```
 
 
