@@ -704,6 +704,9 @@ db.persons.aggregate([
 
 
 ## $unwind
+- only work on array values
+- two froms short and long
+
 ```
 db.persons.aggregate([
     {$unwind: "$tags"}
@@ -1578,6 +1581,119 @@ What film has the lowest normalized_rating?
  normalized_rating: 1
 }}, {$limit: 1}]
 ```
+
+
+### Lab - $group and Accumulators
+For all films that won at least 1 Oscar, calculate the standard deviation, highest, lowest, and average imdb.rating. Use the **sample** standard deviation expression.
+
+```
+[{$match: {
+ awards: {
+  $regex: RegExp('Won \d{1,2} Oscar')
+ }
+}}, {$project: {
+ ratign: '$imdb.rating'
+}}, {$group: {
+ _id: null,
+ max: {
+  $max: '$ratign'
+ },
+ min: {
+  $min: '$ratign'
+ },
+ avg: {
+  $avg: '$ratign'
+ },
+ std: {
+  $stdDevSamp: '$ratign'
+ }
+}}]
+```
+
+
+### Lab - $unwind
+What is the name, number of movies, and average rating (truncated to one decimal) for the cast member that has been in the most number of movies with **English** as an available language?
+
+```
+[{$match: {
+ languages: 'English'
+}}, {$unwind: {
+ path: '$cast'
+}}, {$group: {
+ _id: '$cast',
+ films: {
+  $addToSet: '$title'
+ },
+ average: {
+  $avg: '$imdb.rating'
+ }
+}}, {$project: {
+ _id: 1,
+ numFilms: {
+  $size: '$films'
+ },
+ average: 1
+}}, {$sort: {
+ numFilms: -1,
+ average: -1
+}}]
+```
+
+
+### Lab - Using $lookup
+Which alliance from air_alliances flies the most **routes** with either a Boeing 747 or an Airbus A380 (abbreviated 747 and 380 in air_routes)?
+
+
+### Lab: $graphLookup
+Find the list of all possible distinct destinations, with at most one layover, departing from the base airports of airlines from Germany, Spain or Canada that are part of the "OneWorld" alliance. Include both the destination and which airline services that location. As a small hint, you should find **158** destinations.
+
+```
+[{
+  $match: { name: "OneWorld" }
+}, {
+  $graphLookup: {
+    startWith: "$airlines",
+    from: "air_airlines",
+    connectFromField: "name",
+    connectToField: "name",
+    as: "airlines",
+    maxDepth: 0,
+    restrictSearchWithMatch: {
+      country: { $in: ["Germany", "Spain", "Canada"] }
+    }
+  }
+}, {
+  $graphLookup: {
+    startWith: "$airlines.base",
+    from: "air_routes",
+    connectFromField: "dst_airport",
+    connectToField: "src_airport",
+    as: "connections",
+    maxDepth: 1
+  }
+}, {
+  $project: {
+    validAirlines: "$airlines.name",
+    "connections.dst_airport": 1,
+    "connections.airline.name": 1
+  }
+},
+{ $unwind: "$connections" },
+{
+  $project: {
+    isValid: { $in: ["$connections.airline.name", "$validAirlines"] },
+    "connections.dst_airport": 1
+  }
+},
+{ $match: { isValid: true } },
+{ $group: { _id: "$connections.dst_airport" } }
+]
+```
+
+
+### Lab - $facets
+How many movies are in both the top ten highest rated movies according to the imdb.rating and the metacritic fields? We should get these results with exactly one access to the database.
+
 
 
 ## some helpful links
