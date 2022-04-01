@@ -1349,6 +1349,11 @@ db.collection_1.aggregate([
 - source collection >= 100 documents AND
 - $sample is the first stage
 
+## $redact
+- can be useful to implementing access controll list
+- `$$KEEP` and `$$PRUNE` automatically apply to all levels below the evaluated level
+- `$$DESCEND` retains the current level and evaluates the next level down
+- $redact isnot for restricting access to a collection
 
 ## MongoDB University, M121: The MongoDB Aggregation Framework
 
@@ -1694,7 +1699,67 @@ Find the list of all possible distinct destinations, with at most one layover, d
 ### Lab - $facets
 How many movies are in both the top ten highest rated movies according to the imdb.rating and the metacritic fields? We should get these results with exactly one access to the database.
 
-
+```
+[
+  {
+    $match: {
+      metacritic: { $gte: 0 },
+      "imdb.rating": { $gte: 0 }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      metacritic: 1,
+      imdb: 1,
+      title: 1
+    }
+  },
+  {
+    $facet: {
+      top_metacritic: [
+        {
+          $sort: {
+            metacritic: -1,
+            title: 1
+          }
+        },
+        {
+          $limit: 10
+        },
+        {
+          $project: {
+            title: 1
+          }
+        }
+      ],
+      top_imdb: [
+        {
+          $sort: {
+            "imdb.rating": -1,
+            title: 1
+          }
+        },
+        {
+          $limit: 10
+        },
+        {
+          $project: {
+            title: 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    $project: {
+      movies_in_both: {
+        $setIntersection: ["$top_metacritic", "$top_imdb"]
+      }
+    }
+  }
+]
+```
 
 ## some helpful links
 - MongoDB University, M121: The MongoDB Aggregation Framework https://university.mongodb.com/mercury/M121/2022_March_22/overview
